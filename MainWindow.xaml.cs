@@ -6,6 +6,7 @@
 
 namespace Microsoft.Samples.Kinect.SkeletonBasics
 {
+    using System;
     using System.IO;
     using System.Windows;
     using System.Windows.Media;
@@ -30,12 +31,27 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         private readonly Brush inferredJointBrush = Brushes.Yellow; // Brush used for drawing joints that are currently inferred
         private readonly Pen trackedBonePen = new Pen(Brushes.Green, 6); // Pen used for drawing bones that are currently tracked
         private readonly Pen inferredBonePen = new Pen(Brushes.Gray, 1); // Pen used for drawing bones that are currently inferred
-        private DrawingGroup drawingGroup; // Drawing group for skeleton rendering output
+        private DrawingGroup drawingGroupSkeleton; // Drawing group for skeleton rendering output
         private DrawingImage imageSourceSkeleton; // Drawing image that we will display
+
+        // Racket
+        private readonly float racketSize = 140; // Racket size from on end to the other
+        private Point racketPos; // Racket position
+        private float racketTheta; // Angle from x axis following the right hand rule
+        private readonly Brush racketBrush = Brushes.Blue; // Brush used to draw ball
+
+        // Ball
+        private Point ballPos; // Ball position
+        private Point ballVel; // Ball velocity
+        private readonly Brush ballBrush = Brushes.Blue; // Brush used to draw ball
+        private float ballSize = 20;
+        private DrawingGroup drawingGroupBall; // Drawing group for skeleton rendering output
+        private DrawingImage imageSourceBall; // Drawing image that we will display
 
         // RGB
         private WriteableBitmap colorBitmap; // Bitmap that will hold color information
         private byte[] colorPixels; // Intermediate storage for the color data received from the camera
+
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
@@ -59,7 +75,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                     null,
                     new Rect(0, RenderHeight - ClipBoundsThickness, RenderWidth, ClipBoundsThickness));
             }
-
+            
             if (skeleton.ClippedEdges.HasFlag(FrameEdges.Top))
             {
                 drawingContext.DrawRectangle(
@@ -109,15 +125,24 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             {
                 // Skeleton
                 // Create the drawing group we'll use for drawing
-                this.drawingGroup = new DrawingGroup();
+                this.drawingGroupSkeleton = new DrawingGroup();
                 // Create an image source that we can use in our image control
-                this.imageSourceSkeleton = new DrawingImage(this.drawingGroup);
+                this.imageSourceSkeleton = new DrawingImage(this.drawingGroupSkeleton);
                 // Display the drawing using our image control
                 ImageSkeleton.Source = this.imageSourceSkeleton;
                 // Turn on the skeleton stream to receive skeleton frames
                 this.sensor.SkeletonStream.Enable();
                 // Add an event handler to be called whenever there is new color frame data
                 this.sensor.SkeletonFrameReady += this.SensorSkeletonFrameReady;
+
+                // Ball
+                // Create the drawing group we'll use for drawing
+                this.drawingGroupBall = new DrawingGroup();
+                // Create an image source that we can use in our image control
+                this.imageSourceBall = new DrawingImage(this.drawingGroupBall);
+                // Display the drawing using our image control
+                ImageBall.Source = this.imageSourceBall;
+                // Turn on the skeleton stream to receive skeleton frames
 
                 // RGB
                 // Turn on the color stream to receive color frames
@@ -183,6 +208,21 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                         0);
                 }
             }
+
+            DrawBall();
+        }
+
+        private void DrawBall()
+        {
+            using (DrawingContext dc = this.drawingGroupBall.Open())
+            {
+                // Draw a transparent background to set the render size
+                dc.DrawRectangle(Brushes.Transparent, null, new Rect(0.0, 0.0, RenderWidth, RenderHeight));
+
+                //dc.DrawEllipse(ballBrush, null, new Point(50, 300), ballSize, ballSize);
+
+                this.drawingGroupSkeleton.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
+            }
         }
 
         /// <summary>
@@ -203,7 +243,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 }
             }
 
-            using (DrawingContext dc = this.drawingGroup.Open())
+            using (DrawingContext dc = this.drawingGroupSkeleton.Open())
             {
                 // Draw a transparent background to set the render size
                 dc.DrawRectangle(Brushes.Transparent, null, new Rect(0.0, 0.0, RenderWidth, RenderHeight));
@@ -216,7 +256,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
                         if (skel.TrackingState == SkeletonTrackingState.Tracked)
                         {
-                            this.DrawBonesAndJoints(skel, dc);
+                            //this.DrawBonesAndJoints(skel, dc);
+                            DrawRacket(skel, dc);
                         }
                         /*
                         else if (skel.TrackingState == SkeletonTrackingState.PositionOnly)
@@ -233,8 +274,43 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 }
 
                 // prevent drawing outside of our render area
-                this.drawingGroup.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
+                this.drawingGroupSkeleton.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
             }
+        }
+
+        private void DrawRacket(Skeleton skeleton, DrawingContext drawingContext)
+        {
+            float distance;
+            Point rightEnd = new Point(racketSize / 2, 30);
+            Point leftEnd = new Point(-racketSize / 2, 30);
+            Point wrist;
+            Point elbow;
+            Joint wristJoint = skeleton.Joints[JointType.WristRight];
+            Joint elbowJoint = skeleton.Joints[JointType.ElbowRight];
+
+            wrist = SkeletonPointToScreen(wristJoint.Position);
+            elbow = SkeletonPointToScreen(elbowJoint.Position);
+
+            this.racketPos.X = wrist.X;
+            this.racketPos.Y = wrist.Y;
+            this.racketTheta = (float)Math.Acos((wrist.X - elbow.X) / Point.Subtract(wrist, elbow).Length);
+            if (wrist.Y < elbow.Y)
+                this.racketTheta = -this.racketTheta;
+
+            rightEnd = ToScreenSystem(rightEnd);
+            leftEnd = ToScreenSystem(leftEnd);
+
+            drawingContext.DrawLine(new Pen(racketBrush, 5), rightEnd, leftEnd);
+            //drawingContext.DrawRectangle(racketBrush, null, new Rect());
+            //drawingContext.DrawGeometry(racketBrush, null, new Geometry() )
+        }
+
+        private Point ToScreenSystem(Point point)
+        {
+            MatrixTransform mat = new MatrixTransform(Math.Sin(racketTheta), -Math.Cos(racketTheta), 
+                                                      Math.Cos(racketTheta), Math.Sin(racketTheta), 
+                                                      racketPos.X, racketPos.Y);
+            return mat.Transform(point);
         }
 
         /// <summary>
