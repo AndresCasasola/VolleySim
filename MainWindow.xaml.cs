@@ -36,13 +36,18 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
         // Racket
         private readonly float racketSize = 140; // Racket size from on end to the other
-        private Point racketPos; // Racket position
-        private float racketTheta; // Angle from x axis following the right hand rule
+        private Point racketPos1; // Racket 1 position
+        private Point racketPos2; // Racket 1 position
+        private float racketTheta1; // Angle from x axis following the right hand rule
+        private float racketTheta2; // Angle from x axis following the right hand rule
         private readonly Brush racketBrush = Brushes.Blue; // Brush used to draw ball
 
         // Ball
+        private readonly double initialVel = 5; // Initial velocity of the ball
+        private readonly double gravity = 0.4; // Gravity of the ball
         private Point ballPos; // Ball position
-        private Point ballVel; // Ball velocity
+        private Vector ballVel; // Ball velocity
+        private bool ballOnScreen = false; // If there is or not a ball on the screen
         private readonly Brush ballBrush = Brushes.Blue; // Brush used to draw ball
         private float ballSize = 20;
         private DrawingGroup drawingGroupBall; // Drawing group for skeleton rendering output
@@ -143,6 +148,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 // Display the drawing using our image control
                 ImageBall.Source = this.imageSourceBall;
                 // Turn on the skeleton stream to receive skeleton frames
+                ballVel = new Vector(0, initialVel);
+                ballPos = new Point();
 
                 // RGB
                 // Turn on the color stream to receive color frames
@@ -219,10 +226,54 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 // Draw a transparent background to set the render size
                 dc.DrawRectangle(Brushes.Transparent, null, new Rect(0.0, 0.0, RenderWidth, RenderHeight));
 
-                //dc.DrawEllipse(ballBrush, null, new Point(50, 300), ballSize, ballSize);
+                if(ballOnScreen)
+                {
+                    ballPos = ballPos + ballVel;
+                    if (ballPos.Y > RenderHeight + ballSize / 2.0) // If ball is out of screen
+                        ballOnScreen = false;
+                    else                                           // If not
+                        ballVel.Y += gravity;
+                }
+                else
+                {
+                    ballPos.X = RenderWidth * 0.75;
+                    ballPos.Y = 0;
+                    ballVel.X = 0;
+                    ballVel.Y = initialVel;
+                    ballOnScreen = true;
+                }
 
-                this.drawingGroupSkeleton.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
+                // Screen edges collision
+                if (ballPos.Y < -ballSize / 2)
+                    ballVel.Y = -ballVel.Y;
+                if (ballPos.X < -ballSize / 2  ||  ballPos.X > RenderWidth + ballSize / 2)
+                    ballVel.X = -ballVel.X;
+                
+                // Racket 1 collision
+                ballVel = ToRacketSystem(ballVel, racketPos1, racketTheta1);
+                ballPos = ToRacketSystem(ballPos, racketPos1, racketTheta1);
+                if (ballPos.X < ballSize / 2 && ballPos.X > -ballSize / 2 && ballPos.Y < racketSize / 2 && ballPos.Y > -racketSize / 2)
+                {
+                    ballPos.X = -ballPos.X - ballSize * Math.Sign(ballVel.X); // Reflects Position
+                    ballVel.X = -ballVel.X; // Reflects velocity
+                }
+                ballVel = ToScreenSystem(ballVel, racketPos1, racketTheta1);
+                ballPos = ToScreenSystem(ballPos, racketPos1, racketTheta1);
+
+                // Racket 2 collision
+                ballVel = ToRacketSystem(ballVel, racketPos2, racketTheta2);
+                ballPos = ToRacketSystem(ballPos, racketPos2, racketTheta2);
+                if (ballPos.X < ballSize / 2 && ballPos.X > -ballSize / 2 && ballPos.Y < racketSize / 2 && ballPos.Y > -racketSize / 2)
+                {
+                    ballPos.X = -ballPos.X - ballSize * Math.Sign(ballVel.X); // Reflects Position
+                    ballVel.X = -ballVel.X; // Reflects velocity
+                }
+                ballVel = ToScreenSystem(ballVel, racketPos2, racketTheta2);
+                ballPos = ToScreenSystem(ballPos, racketPos2, racketTheta2);
+
+                dc.DrawEllipse(ballBrush, null, ballPos, ballSize, ballSize);
             }
+            this.drawingGroupBall.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
         }
 
         /// <summary>
@@ -240,37 +291,47 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 {
                     skeletons = new Skeleton[skeletonFrame.SkeletonArrayLength];
                     skeletonFrame.CopySkeletonDataTo(skeletons);
+                    Console.WriteLine(skeletonFrame.SkeletonArrayLength);
                 }
             }
 
             using (DrawingContext dc = this.drawingGroupSkeleton.Open())
             {
+                bool oneplayer = false;
+
                 // Draw a transparent background to set the render size
                 dc.DrawRectangle(Brushes.Transparent, null, new Rect(0.0, 0.0, RenderWidth, RenderHeight));
 
-                if (skeletons.Length != 0)
-                {
-                    foreach (Skeleton skel in skeletons)
-                    {
-                        RenderClippedEdges(skel, dc);
 
-                        if (skel.TrackingState == SkeletonTrackingState.Tracked)
+
+                foreach (Skeleton skel in skeletons)
+                {
+                    RenderClippedEdges(skel, dc);
+
+                    if (skel.TrackingState == SkeletonTrackingState.Tracked)
+                    {
+                        //this.DrawBonesAndJoints(skel, dc);
+                        if (!oneplayer)
                         {
-                            //this.DrawBonesAndJoints(skel, dc);
-                            DrawRacket(skel, dc);
+                            DrawRacket(skel, dc, ref racketPos1, ref racketTheta1);
+                            oneplayer = true;
                         }
-                        /*
-                        else if (skel.TrackingState == SkeletonTrackingState.PositionOnly)
+                        else
                         {
-                            dc.DrawEllipse(
-                            this.centerPointBrush,
-                            null,
-                            this.SkeletonPointToScreen(skel.Position),
-                            BodyCenterThickness,
-                            BodyCenterThickness);
+                            DrawRacket(skel, dc, ref racketPos2, ref racketTheta2);
                         }
-                        */
                     }
+                    /*
+                    else if (skel.TrackingState == SkeletonTrackingState.PositionOnly)
+                    {
+                        dc.DrawEllipse(
+                        this.centerPointBrush,
+                        null,
+                        this.SkeletonPointToScreen(skel.Position),
+                        BodyCenterThickness,
+                        BodyCenterThickness);
+                    }
+                    */
                 }
 
                 // prevent drawing outside of our render area
@@ -278,11 +339,10 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             }
         }
 
-        private void DrawRacket(Skeleton skeleton, DrawingContext drawingContext)
+        private void DrawRacket(Skeleton skeleton, DrawingContext drawingContext, ref Point racketPos, ref float racketTheta)
         {
-            float distance;
-            Point rightEnd = new Point(racketSize / 2, 30);
-            Point leftEnd = new Point(-racketSize / 2, 30);
+            Point rightEnd = new Point(0, racketSize / 2);
+            Point leftEnd = new Point(0, -racketSize / 2);
             Point wrist;
             Point elbow;
             Joint wristJoint = skeleton.Joints[JointType.WristRight];
@@ -291,26 +351,62 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             wrist = SkeletonPointToScreen(wristJoint.Position);
             elbow = SkeletonPointToScreen(elbowJoint.Position);
 
-            this.racketPos.X = wrist.X;
-            this.racketPos.Y = wrist.Y;
-            this.racketTheta = (float)Math.Acos((wrist.X - elbow.X) / Point.Subtract(wrist, elbow).Length);
+            racketPos.X = wrist.X;
+            racketPos.Y = wrist.Y;
+            racketTheta = (float)Math.Acos((wrist.X - elbow.X) / Point.Subtract(wrist, elbow).Length);
             if (wrist.Y < elbow.Y)
-                this.racketTheta = -this.racketTheta;
+                racketTheta = -racketTheta;
 
-            rightEnd = ToScreenSystem(rightEnd);
-            leftEnd = ToScreenSystem(leftEnd);
+            rightEnd = ToScreenSystem(rightEnd, racketPos, racketTheta);
+            leftEnd = ToScreenSystem(leftEnd, racketPos, racketTheta);
 
             drawingContext.DrawLine(new Pen(racketBrush, 5), rightEnd, leftEnd);
-            //drawingContext.DrawRectangle(racketBrush, null, new Rect());
-            //drawingContext.DrawGeometry(racketBrush, null, new Geometry() )
         }
 
-        private Point ToScreenSystem(Point point)
+        private Point ToScreenSystem(Point point, Point racketPos, float racketTheta)
         {
-            MatrixTransform mat = new MatrixTransform(Math.Sin(racketTheta), -Math.Cos(racketTheta), 
-                                                      Math.Cos(racketTheta), Math.Sin(racketTheta), 
+            Matrix mat = new Matrix(Math.Cos(racketTheta), Math.Sin(racketTheta), 
+                                                      -Math.Sin(racketTheta), Math.Cos(racketTheta), 
                                                       racketPos.X, racketPos.Y);
             return mat.Transform(point);
+        }
+
+        private Vector ToScreenSystem(Vector vector, Point racketPos, float racketTheta)
+        {
+            Point point;
+
+            Matrix mat = new Matrix(Math.Cos(racketTheta), Math.Sin(racketTheta),
+                                                      -Math.Sin(racketTheta), Math.Cos(racketTheta),
+                                                      0, 0);
+            point = new Point(vector.X, vector.Y);
+            point = mat.Transform(point);
+            vector.X = point.X;
+            vector.Y = point.Y;
+            return vector;
+        }
+
+        private Point ToRacketSystem(Point point, Point racketPos, float racketTheta)
+        {
+            Matrix mat = new Matrix(Math.Cos(racketTheta), Math.Sin(racketTheta),
+                                                      -Math.Sin(racketTheta), Math.Cos(racketTheta),
+                                                      racketPos.X, racketPos.Y);
+            mat.Invert();
+            return mat.Transform(point);
+        }
+
+        private Vector ToRacketSystem(Vector vector, Point racketPos, float racketTheta)
+        {
+            Point point;
+
+            Matrix mat = new Matrix(Math.Cos(racketTheta), Math.Sin(racketTheta),
+                                                      -Math.Sin(racketTheta), Math.Cos(racketTheta),
+                                                      0, 0);
+            mat.Invert();
+            point = new Point(vector.X, vector.Y);
+            point = mat.Transform(point);
+            vector.X = point.X;
+            vector.Y = point.Y;
+            return vector;
         }
 
         /// <summary>
