@@ -345,10 +345,23 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             Point leftEnd = new Point(0, -racketSize / 2);
             Point wrist;
             Point elbow;
-            Joint wristJoint = skeleton.Joints[JointType.WristRight];
-            Joint elbowJoint = skeleton.Joints[JointType.ElbowRight];
+            Joint wristJoint;
+            Joint elbowJoint;
 
+
+            wristJoint = skeleton.Joints[JointType.WristRight];
             wrist = SkeletonPointToScreen(wristJoint.Position);
+
+            if(wrist.X > RenderWidth / 2) // If right hand is on the right use it
+            {
+                elbowJoint = skeleton.Joints[JointType.ElbowRight];
+            }
+            else                         // If not, use the left hand
+            {
+                wristJoint = skeleton.Joints[JointType.WristLeft];
+                wrist = SkeletonPointToScreen(wristJoint.Position);
+                elbowJoint = skeleton.Joints[JointType.ElbowLeft];
+            }
             elbow = SkeletonPointToScreen(elbowJoint.Position);
 
             racketPos.X = wrist.X;
