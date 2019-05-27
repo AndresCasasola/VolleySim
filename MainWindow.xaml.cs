@@ -13,6 +13,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
     using System.Windows.Media.Imaging;
     using Microsoft.Kinect;
     using System.Collections.Generic;
+    // Libraries for speech recognition:
+    using Microsoft.Speech.AudioFormat;
+    using Microsoft.Speech.Recognition;
+    using System.Windows.Documents;
+
+    using System.ComponentModel;
+    using System.Globalization;
 
     public struct Ball
     {
@@ -82,6 +89,12 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         private WriteableBitmap colorBitmap; // Bitmap that will hold color information
         private byte[] colorPixels; // Intermediate storage for the color data received from the camera
 
+        /// Speech recognition engine using audio data from Kinect.
+        private SpeechRecognitionEngine speechEngine;
+
+        /// List of all UI span elements used to select recognized text. Delete if works commented
+        //private List<Span> recognitionSpans;
+
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class.
@@ -89,6 +102,24 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         public MainWindow()
         {
             InitializeComponent();
+        }
+
+        /// Gets the metadata for the speech recognizer (acoustic model) most suitable to
+        /// process audio from Kinect device.
+        /// RecognizerInfo if found, <code>null</code> otherwise.
+        private static RecognizerInfo GetKinectRecognizer()
+        {
+            foreach (RecognizerInfo recognizer in SpeechRecognitionEngine.InstalledRecognizers())
+            {
+                string value;
+                recognizer.AdditionalInfo.TryGetValue("Kinect", out value);
+                if ("True".Equals(value, StringComparison.OrdinalIgnoreCase) && "es-ES".Equals(recognizer.Culture.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return recognizer;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -209,6 +240,38 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             {
                 this.statusBarText.Text = Properties.Resources.NoKinectReady;
             }
+
+            // v----- Speech recognizer -----v //
+            RecognizerInfo ri = GetKinectRecognizer();
+
+            if (null != ri)
+            {
+
+                this.speechEngine = new SpeechRecognitionEngine(ri.Id);
+ 
+                 var directions = new Choices();
+                 directions.Add(new SemanticResultValue("pelota", "PELOTA"));   // Grammar, Command
+                
+                 var gb = new GrammarBuilder { Culture = ri.Culture };
+                 gb.Append(directions);
+                
+                 var g = new Grammar(gb);
+                 
+                // Create a grammar not from grammar definition XML file.
+                speechEngine.LoadGrammar(g);
+
+                speechEngine.SpeechRecognized += SpeechRecognized;
+                speechEngine.SpeechRecognitionRejected += SpeechRejected;
+
+                // For long recognition sessions (a few hours or more), it may be beneficial to turn off adaptation of the acoustic model. 
+                // This will prevent recognition accuracy from degrading over time.
+                ////speechEngine.UpdateRecognizerSetting("AdaptationOn", 0);
+
+                speechEngine.SetInputToAudioStream(
+                    sensor.AudioSource.Start(), new SpeechAudioFormatInfo(EncodingFormat.Pcm, 16000, 16, 1, 32000, 2, null));
+                speechEngine.RecognizeAsync(RecognizeMode.Multiple);
+            }
+            // ^----- Speech recognizer -----^ //
         }
 
         /// <summary>
@@ -222,6 +285,23 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             {
                 this.sensor.Stop();
             }
+
+            // v----- Speech recognizer -----v //
+            if (null != this.sensor)
+            {
+                this.sensor.AudioSource.Stop();
+
+                this.sensor.Stop();
+                this.sensor = null;
+            }
+
+            if (null != this.speechEngine)
+            {
+                this.speechEngine.SpeechRecognized -= SpeechRecognized;
+                this.speechEngine.SpeechRecognitionRejected -= SpeechRejected;
+                this.speechEngine.RecognizeAsyncStop();
+            }
+            // ^----- Speech recognizer -----^ //
         }
 
         /// <summary>
@@ -420,6 +500,34 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
                 // prevent drawing outside of our render area
                 this.drawingGroupSkeleton.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
+            }
+        }
+
+        /// Handler for recognized speech events.
+        private void SpeechRecognized(object sender, SpeechRecognizedEventArgs e)
+        {
+            // Speech utterance confidence below which we treat speech as if it hadn't been heard
+            const double ConfidenceThreshold = 0.3;
+
+            // Number of degrees in a right angle.
+            const int DegreesInRightAngle = 90;
+
+            // Number of pixels turtle should move forwards or backwards each time.
+            const int DisplacementAmount = 60;
+
+            //ClearRecognitionHighlights();
+
+            if (e.Result.Confidence >= ConfidenceThreshold)
+            {
+                switch (e.Result.Semantics.Value.ToString())
+                {
+                    case "PELOTA":
+                        Console.Write("RECIBIDO\n");
+                        MessageBox.Show("RECIBIDO");
+
+                        break;
+
+                }
             }
         }
 
@@ -689,6 +797,12 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                     this.sensor.SkeletonStream.TrackingMode = SkeletonTrackingMode.Default;
                 }
             }
+        }
+
+        /// Handler for rejected speech events.
+        private void SpeechRejected(object sender, SpeechRecognitionRejectedEventArgs e)
+        {
+            //ClearRecognitionHighlights();
         }
     }
 }
