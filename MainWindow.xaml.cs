@@ -251,8 +251,9 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
  
                  var directions = new Choices();
                  directions.Add(new SemanticResultValue("pelota", "PELOTA"));   // Grammar, Command
-                
-                 var gb = new GrammarBuilder { Culture = ri.Culture };
+                directions.Add(new SemanticResultValue("reset", "RESET"));
+
+                var gb = new GrammarBuilder { Culture = ri.Culture };
                  gb.Append(directions);
                 
                  var g = new Grammar(gb);
@@ -358,15 +359,6 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                     else                                           // If not
                         ball.vel.Y += gravity;
                 }
-                else
-                {
-                    ball.pos.X = RenderWidth * 0.75;
-                    ball.pos.Y = 0;
-                    ball.vel.X = 0;
-                    ball.vel.Y = initialVel;
-                    ball.onScreen = true;
-                    ball.onNet = false;
-                }
 
                 // Screen edges collision
                 if (ball.pos.Y < -ballSize / 2)  // Out of top side
@@ -430,7 +422,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 }
 
                 // Draw Ball
-                dc.DrawEllipse(ballBrush, null, ball.pos, ballSize, ballSize);
+                if(ball.onScreen)
+                    dc.DrawEllipse(ballBrush, null, ball.pos, ballSize, ballSize);
 
                 // Draw Net
                 dc.DrawLine(new Pen(ballBrush, 5), new Point(netX, RenderHeight), new Point(netX, netHeight));
@@ -522,10 +515,26 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 switch (e.Result.Semantics.Value.ToString())
                 {
                     case "PELOTA":
-                        Console.Write("RECIBIDO\n");
-                        MessageBox.Show("RECIBIDO");
-
+                        if (!ball.onScreen)
+                        {
+                            Random random = new Random();
+                            int rand = random.Next(0, 2);
+                            ball.pos.X = RenderWidth * 0.25 + (RenderWidth * 0.5 * rand);
+                            ball.pos.Y = 0;
+                            ball.vel.X = 0;
+                            ball.vel.Y = initialVel;
+                            ball.onScreen = true;
+                            ball.onNet = false;
+                        }
                         break;
+
+                    case "RESET":
+                        ball.onScreen = false;
+                        scoreR = 0;
+                        scoreL = 0;
+                        textScoreL.Text = scoreL.ToString();
+                        textScoreR.Text = scoreR.ToString();
+                    break;
 
                 }
             }
