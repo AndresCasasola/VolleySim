@@ -1,7 +1,7 @@
 ﻿//------------------------------------------------------------------------------
-// <copyright file="MainWindow.xaml.cs" company="Microsoft">
-//     Copyright (c) Microsoft Corporation.  All rights reserved.
-// </copyright>
+// Project: VolleySim (Volleyball simulator)
+// Authors: Andrés Casasola Domínguez
+//          Pedro Rico Pinazo
 //------------------------------------------------------------------------------
 
 namespace Microsoft.Samples.Kinect.SkeletonBasics
@@ -13,38 +13,34 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
     using System.Windows.Media.Imaging;
     using Microsoft.Kinect;
     using System.Collections.Generic;
-    // Libraries for speech recognition:
     using Microsoft.Speech.AudioFormat;
     using Microsoft.Speech.Recognition;
     using System.Windows.Documents;
-
     using System.ComponentModel;
     using System.Globalization;
 
     public struct Ball
     {
-        public Point pos; // Ball position
-        public Vector vel; // Ball velocity
-        public bool onScreen; // If it is or not onScreen
-        public bool onNet; // If ball is touching the net
+        public Point pos;         // Ball position
+        public Vector vel;        // Ball velocity
+        public bool onScreen;     // If it is or not onScreen
+        public bool onNet;        // If ball is touching the net
     }
 
     public enum FieldSide {None, Right, Left};
 
     public struct Racket
     {
-        public Point pos; //
-        public List<Point> posList; // Racket old tracked positions
-        public float theta; // Angle from x axis following the right hand rule
-        public List<float> thetaList; 
-        public bool onScreen; // If it is or not on screen
-        public FieldSide side;
-        public bool onItsSide;
+        public Point pos;              // Racket position
+        public List<Point> posList;    // Racket old tracked positions
+        public float theta;            // Racket theta angle
+        public List<float> thetaList;  // Racket old tracked angles
+        public bool onScreen;          // If it is or not on screen
+        public FieldSide side;         // Field side where the racket should be
+        public bool onItsSide;         // If the racket is currently in its side
     }
 
-    /// <summary>
     /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
         private KinectSensor sensor; // Active Kinect sensor
@@ -91,7 +87,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         // Game
         private int scoreR, scoreL;
         private bool gameStarted;
-        private bool twoPlayers;
+        private bool twoPlayersOnScreen;
 
         private double penThickness = 2.0;
         private Brush penBrush = Brushes.Black;
@@ -103,81 +99,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         /// Speech recognition engine using audio data from Kinect.
         private SpeechRecognitionEngine speechEngine;
 
-        /// List of all UI span elements used to select recognized text. Delete if works commented
-        //private List<Span> recognitionSpans;
-
-
-        /// <summary>
         /// Initializes a new instance of the MainWindow class.
-        /// </summary>
         public MainWindow()
         {
             InitializeComponent();
         }
 
-        /// Gets the metadata for the speech recognizer (acoustic model) most suitable to
-        /// process audio from Kinect device.
-        /// RecognizerInfo if found, <code>null</code> otherwise.
-        private static RecognizerInfo GetKinectRecognizer()
-        {
-            foreach (RecognizerInfo recognizer in SpeechRecognitionEngine.InstalledRecognizers())
-            {
-                string value;
-                recognizer.AdditionalInfo.TryGetValue("Kinect", out value);
-                if ("True".Equals(value, StringComparison.OrdinalIgnoreCase) && "es-ES".Equals(recognizer.Culture.Name, StringComparison.OrdinalIgnoreCase))
-                {
-                    return recognizer;
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// Draws indicators to show which edges are clipping skeleton data
-        /// </summary>
-        /// <param name="skeleton">skeleton to draw clipping information for</param>
-        /// <param name="drawingContext">drawing context to draw to</param>
-        private static void RenderClippedEdges(Skeleton skeleton, DrawingContext drawingContext)
-        {
-            if (skeleton.ClippedEdges.HasFlag(FrameEdges.Bottom))
-            {
-                drawingContext.DrawRectangle(
-                    Brushes.Red,
-                    null,
-                    new Rect(0, RenderHeight - ClipBoundsThickness, RenderWidth, ClipBoundsThickness));
-            }
-            
-            if (skeleton.ClippedEdges.HasFlag(FrameEdges.Top))
-            {
-                drawingContext.DrawRectangle(
-                    Brushes.Red,
-                    null,
-                    new Rect(0, 0, RenderWidth, ClipBoundsThickness));
-            }
-
-            if (skeleton.ClippedEdges.HasFlag(FrameEdges.Left))
-            {
-                drawingContext.DrawRectangle(
-                    Brushes.Red,
-                    null,
-                    new Rect(0, 0, ClipBoundsThickness, RenderHeight));
-            }
-
-            if (skeleton.ClippedEdges.HasFlag(FrameEdges.Right))
-            {
-                drawingContext.DrawRectangle(
-                    Brushes.Red,
-                    null,
-                    new Rect(RenderWidth - ClipBoundsThickness, 0, ClipBoundsThickness, RenderHeight));
-            }
-        }
-
-        /// <summary>
-        /// Execute startup tasks
-        /// </summary>
-        /// <param name="sender">object sending the event</param>
-        /// <param name="e">event arguments</param>
+        // Execute startup tasks
         private void WindowLoaded(object sender, RoutedEventArgs e)
         {
             // Look through all sensors and start the first connected one.
@@ -260,14 +188,14 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
                 this.speechEngine = new SpeechRecognitionEngine(ri.Id);
  
-                 var directions = new Choices();
-                 directions.Add(new SemanticResultValue("pelota", "PELOTA"));   // Grammar, Command
+                var directions = new Choices();
+                directions.Add(new SemanticResultValue("pelota", "PELOTA"));   // Grammar, Command
                 directions.Add(new SemanticResultValue("reset", "RESET"));
 
                 var gb = new GrammarBuilder { Culture = ri.Culture };
-                 gb.Append(directions);
+                gb.Append(directions);
                 
-                 var g = new Grammar(gb);
+                var g = new Grammar(gb);
                  
                 // Create a grammar not from grammar definition XML file.
                 speechEngine.LoadGrammar(g);
@@ -280,17 +208,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 ////speechEngine.UpdateRecognizerSetting("AdaptationOn", 0);
 
                 speechEngine.SetInputToAudioStream(
-                    sensor.AudioSource.Start(), new SpeechAudioFormatInfo(EncodingFormat.Pcm, 16000, 16, 1, 32000, 2, null));
+                sensor.AudioSource.Start(), new SpeechAudioFormatInfo(EncodingFormat.Pcm, 16000, 16, 1, 32000, 2, null));
                 speechEngine.RecognizeAsync(RecognizeMode.Multiple);
             }
             // ^----- Speech recognizer -----^ //
         }
 
-        /// <summary>
-        /// Execute shutdown tasks
-        /// </summary>
-        /// <param name="sender">object sending the event</param>
-        /// <param name="e">event arguments</param>
+        // Execute shutdown tasks
         private void WindowClosing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             if (null != this.sensor)
@@ -316,11 +240,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             // ^----- Speech recognizer -----^ //
         }
 
-        /// <summary>
-        /// Event handler for Kinect sensor's ColorFrameReady event
-        /// </summary>
-        /// <param name="sender">object sending the event</param>
-        /// <param name="e">event arguments</param>
+        // Event handler for Kinect sensor's ColorFrameReady event
         private void SensorColorFrameReady(object sender, ColorImageFrameReadyEventArgs e)
         {
             using (ColorImageFrame colorFrame = e.OpenColorImageFrame())
@@ -342,112 +262,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             DrawBall();
         }
 
-        private void DrawBall()
-        {
-            using (DrawingContext dc = this.drawingGroupBall.Open())
-            {
-                // Draw a transparent background to set the render size
-                dc.DrawRectangle(Brushes.Transparent, null, new Rect(0.0, 0.0, RenderWidth, RenderHeight));
-
-                if(ball.onScreen)
-                {
-                    ball.pos = ball.pos + ball.vel;
-                    if (ball.pos.Y > RenderHeight + ballSize / 2.0) // If ball is out of screen
-                    {
-                        ball.onScreen = false;
-                        if (ball.pos.X > netX)
-                        {
-                            scoreL++;
-                            textScoreL.Text = scoreL.ToString();
-                            //Format("{0}", scoreL);
-                        }
-                        else
-                        {
-                            scoreR++;
-                            textScoreR.Text = scoreR.ToString();
-                        }
-                    }
-                    else                                           // If not
-                        ball.vel.Y += gravity;
-                }
-
-                // Screen edges collision
-                if (ball.pos.Y < -ballSize / 2)  // Out of top side
-                {
-                    ball.vel.Y = -ball.vel.Y;
-                    ball.pos.Y = - ballSize - ball.pos.Y;
-                }
-                if (ball.pos.X < -ballSize / 2 )  // Out of left side
-                {
-                    ball.vel.X = -ball.vel.X;
-                    ball.pos.X = -ballSize - ball.pos.X;
-                }
-                if (ball.pos.X > RenderWidth + ballSize / 2)  // Out of right side
-                {
-                    ball.vel.X = -ball.vel.X;
-                    ball.pos.X = 2* RenderWidth + ballSize - ball.pos.X;
-                }
-
-                if (!ball.onNet)
-                {
-                    // Racket 1 collision
-                    if (racket1.onScreen)
-                    {
-                        ball.vel = ToRacketSystem(ball.vel, racket1.pos, racket1.theta); //racket1.pos[0]
-                        ball.pos = ToRacketSystem(ball.pos, racket1.pos, racket1.theta);
-                        if (ball.pos.X < ballSize / 2 && ball.pos.X > -ballSize / 2 && ball.pos.Y < racketSize / 2 && ball.pos.Y > -racketSize / 2)
-                        {
-                            ball.pos.X = -ball.pos.X - ballSize * Math.Sign(ball.vel.X); // Reflects Position
-                            ball.vel.X = -ball.vel.X; // Reflects velocity
-                        }
-                        ball.vel = ToScreenSystem(ball.vel, racket1.pos, racket1.theta);
-                        ball.pos = ToScreenSystem(ball.pos, racket1.pos, racket1.theta);
-                    }
-
-                    // Racket 2 collision
-                    if (racket2.onScreen)
-                    {
-                        ball.vel = ToRacketSystem(ball.vel, racket2.pos, racket2.theta);
-                        ball.pos = ToRacketSystem(ball.pos, racket2.pos, racket2.theta);
-                        if (ball.pos.X < ballSize / 2 && ball.pos.X > -ballSize / 2 && ball.pos.Y < racketSize / 2 && ball.pos.Y > -racketSize / 2)
-                        {
-                            ball.pos.X = -ball.pos.X - ballSize * Math.Sign(ball.vel.X); // Reflects Position
-                            ball.vel.X = -ball.vel.X; // Reflects velocity
-                        }
-                        ball.vel = ToScreenSystem(ball.vel, racket2.pos, racket2.theta);
-                        ball.pos = ToScreenSystem(ball.pos, racket2.pos, racket2.theta);
-                    }
-
-                    // Net collision
-                    if (ball.pos.Y > netHeight && ball.pos.X > netX - ballSize / 2 && ball.pos.X < netX + ballSize / 2)
-                    {
-                        if (ball.vel.X > 0) // It comes from the left side
-                            ball.pos.X = netX - ballSize / 2;
-                        else
-                            ball.pos.X = netX + ballSize / 2;
-
-                        ball.vel.X = 0;
-                        ball.vel.Y = 0;
-                        ball.onNet = true;
-                    }
-                }
-
-                // Draw Ball
-                if(ball.onScreen)
-                    dc.DrawEllipse(ballBrush, new Pen(Brushes.Black, penThickness), ball.pos, ballSize, ballSize);
-
-                // Draw Net
-                dc.DrawRectangle(netBrush, new Pen(penBrush, penThickness), new Rect(netX - netWidth / 2, netHeight, netWidth, RenderHeight));
-                //dc.DrawLine(new Pen(ballBrush, 5), new Point(netX, RenderHeight), new Point(netX, netHeight));
-            }
-            this.drawingGroupBall.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
-        }
-
-        /// <summary>
-        /// Event handler for Kinect sensor's SkeletonFrameReady event
-        /// </summary>
-        /// <param name="sender">object sending the event</param>
-        /// <param name="e">event arguments</param>
+        // Event handler for Kinect sensor's SkeletonFrameReady event
         private void SensorSkeletonFrameReady(object sender, SkeletonFrameReadyEventArgs e)
         {
             Skeleton[] skeletons = new Skeleton[0];
@@ -464,13 +279,11 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
             using (DrawingContext dc = this.drawingGroupSkeleton.Open())
             {
-                bool onePlayer = false;
-                twoPlayers = false;
+                bool onePlayerOnScreen = false;
+                twoPlayersOnScreen = false;
 
                 // Draw a transparent background to set the render size
                 dc.DrawRectangle(Brushes.Transparent, null, new Rect(0.0, 0.0, RenderWidth, RenderHeight));
-
-
 
                 foreach (Skeleton skel in skeletons)
                 {
@@ -478,31 +291,19 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
                     if (skel.TrackingState == SkeletonTrackingState.Tracked)
                     {
-                        //this.DrawBonesAndJoints(skel, dc);
-                        if (!onePlayer)
+                        if (!onePlayerOnScreen) // Fisrt skeleton found
                         {
                             DrawRacket(skel, dc, ref racket1);
                             racket1.onScreen = true;
-                            onePlayer = true;
+                            onePlayerOnScreen = true;
                         }
-                        else
+                        else // Second skeleton found
                         {
                             DrawRacket(skel, dc, ref racket2);
                             racket2.onScreen = true;
-                            twoPlayers = true;
+                            twoPlayersOnScreen = true;
                         }
                     }
-                    /*
-                    else if (skel.TrackingState == SkeletonTrackingState.PositionOnly)
-                    {
-                        dc.DrawEllipse(
-                        this.centerPointBrush,
-                        null,
-                        this.SkeletonPointToScreen(skel.Position),
-                        BodyCenterThickness,
-                        BodyCenterThickness);
-                    }
-                    */
                 }
 
                 // prevent drawing outside of our render area
@@ -510,26 +311,18 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             }
         }
 
-        /// Handler for recognized speech events.
+        // Handler for recognized speech events.
         private void SpeechRecognized(object sender, SpeechRecognizedEventArgs e)
         {
             // Speech utterance confidence below which we treat speech as if it hadn't been heard
             const double ConfidenceThreshold = 0.3;
-
-            // Number of degrees in a right angle.
-            const int DegreesInRightAngle = 90;
-
-            // Number of pixels turtle should move forwards or backwards each time.
-            const int DisplacementAmount = 60;
-
-            //ClearRecognitionHighlights();
 
             if (e.Result.Confidence >= ConfidenceThreshold)
             {
                 switch (e.Result.Semantics.Value.ToString())
                 {
                     case "PELOTA":
-                        if(!gameStarted  &&  twoPlayers)
+                        if(!gameStarted  &&  twoPlayersOnScreen)
                         {
                             if (racket1.side != FieldSide.None && racket2.side != FieldSide.None && racket1.side != racket2.side)
                                 gameStarted = true;
@@ -561,42 +354,131 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             }
         }
 
+        // Handles the checking or unchecking of the seated mode combo box
+        private void CheckBoxSeatedModeChanged(object sender, RoutedEventArgs e)
+        {
+            if (null != this.sensor)
+            {
+                if (this.checkBoxSeatedMode.IsChecked.GetValueOrDefault())
+                    this.sensor.SkeletonStream.TrackingMode = SkeletonTrackingMode.Seated;
+                else
+                    this.sensor.SkeletonStream.TrackingMode = SkeletonTrackingMode.Default;
+            }
+        }
+
+        // Update ball position, check collisions
+        private void DrawBall()
+        {
+            using (DrawingContext dc = this.drawingGroupBall.Open())
+            {
+                // Draw a transparent background to set the render size
+                dc.DrawRectangle(Brushes.Transparent, null, new Rect(0.0, 0.0, RenderWidth, RenderHeight));
+
+                if (ball.onScreen)
+                {
+                    // Update position
+                    ball.pos = ball.pos + ball.vel;
+                    if (ball.pos.Y > RenderHeight + ballSize / 2.0) // If ball is out of screen
+                    {
+                        ball.onScreen = false;
+                        if (ball.pos.X > netX)  // Right field side
+                        {
+                            scoreL++;  // Point for left player
+                            textScoreL.Text = scoreL.ToString();
+                        }
+                        else  // Left field side
+                        {
+                            scoreR++;  // Point for right player
+                            textScoreR.Text = scoreR.ToString();
+                        }
+                    }
+                    else  // If ball is not out of screen
+                        ball.vel.Y += gravity;
+                }
+
+                // Screen edges collision
+                if (ball.pos.Y < -ballSize / 2)  // Out of top side
+                {
+                    ball.vel.Y = -ball.vel.Y;
+                    ball.pos.Y = -ballSize - ball.pos.Y;
+                }
+                if (ball.pos.X < -ballSize / 2)  // Out of left side
+                {
+                    ball.vel.X = -ball.vel.X;
+                    ball.pos.X = -ballSize - ball.pos.X;
+                }
+                if (ball.pos.X > RenderWidth + ballSize / 2)  // Out of right side
+                {
+                    ball.vel.X = -ball.vel.X;
+                    ball.pos.X = 2 * RenderWidth + ballSize - ball.pos.X;
+                }
+
+                if (!ball.onNet) // If ball is on net, rackets cannot touch it
+                {
+                    // Racket 1 collision
+                    if (racket1.onScreen)
+                    {
+                        ball.vel = ToRacketReferenceFrame(ball.vel, racket1.pos, racket1.theta);
+                        ball.pos = ToRacketReferenceFrame(ball.pos, racket1.pos, racket1.theta);
+                        if (ball.pos.X < ballSize / 2 && ball.pos.X > -ballSize / 2 && ball.pos.Y < racketSize / 2 && ball.pos.Y > -racketSize / 2)
+                        {
+                            // Reflects Position
+                            ball.pos.X = -ball.pos.X - ballSize * Math.Sign(ball.vel.X);
+                            // Reflects velocity
+                            ball.vel.X = -ball.vel.X;
+                        }
+                        ball.vel = ToScreenReferenceFrame(ball.vel, racket1.pos, racket1.theta);
+                        ball.pos = ToScreenReferenceFrame(ball.pos, racket1.pos, racket1.theta);
+                    }
+
+                    // Racket 2 collision
+                    if (racket2.onScreen)
+                    {
+                        ball.vel = ToRacketReferenceFrame(ball.vel, racket2.pos, racket2.theta);
+                        ball.pos = ToRacketReferenceFrame(ball.pos, racket2.pos, racket2.theta);
+                        if (ball.pos.X < ballSize / 2 && ball.pos.X > -ballSize / 2 && ball.pos.Y < racketSize / 2 && ball.pos.Y > -racketSize / 2)
+                        {
+                            // Reflects Position
+                            ball.pos.X = -ball.pos.X - ballSize * Math.Sign(ball.vel.X);
+                            // Reflects velocity
+                            ball.vel.X = -ball.vel.X;
+                        }
+                        ball.vel = ToScreenReferenceFrame(ball.vel, racket2.pos, racket2.theta);
+                        ball.pos = ToScreenReferenceFrame(ball.pos, racket2.pos, racket2.theta);
+                    }
+
+                    // Net collision
+                    if (ball.pos.Y > netHeight && ball.pos.X > netX - ballSize / 2 && ball.pos.X < netX + ballSize / 2)
+                    {
+                        if (ball.vel.X > 0) // It comes from the left side
+                            ball.pos.X = netX - ballSize / 2;
+                        else  // It comes from the right side
+                            ball.pos.X = netX + ballSize / 2;
+
+                        ball.vel.X = 0;
+                        ball.vel.Y = 0;
+                        ball.onNet = true;
+                    }
+                }
+
+                // Draw Ball
+                if (ball.onScreen)
+                    dc.DrawEllipse(ballBrush, new Pen(Brushes.Black, penThickness), ball.pos, ballSize, ballSize);
+
+                // Draw Net
+                dc.DrawRectangle(netBrush, new Pen(penBrush, penThickness), new Rect(netX - netWidth / 2, netHeight, netWidth, RenderHeight));
+            }
+            this.drawingGroupBall.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
+        }
+
         private void DrawRacket(Skeleton skeleton, DrawingContext drawingContext, ref Racket racket)
         {
             FieldSide side;
             Brush racketBrush;
-            Point rightEnd = new Point(racketWidth / 2, racketSize / 2);
-            Point leftEnd = new Point(-racketWidth / 2, -racketSize / 2);
+            Point rightEnd = new Point(0, racketSize / 2);
+            Point leftEnd = new Point(0, -racketSize / 2);
             Point newPoint;
             float newTheta;
-
-
-            /*
-            Point wrist;
-            Point elbow;
-            Joint elbowJoint;
-            Joint wristJoint;
-            
-            wristJoint = skeleton.Joints[JointType.WristRight];
-            wrist = SkeletonPointToScreen(wristJoint.Position);
-
-            if(wrist.X > RenderWidth / 2) // If right hand is on the right use it
-            {
-                elbowJoint = skeleton.Joints[JointType.ElbowRight];
-            }
-            else                         // If not, use the left hand
-            {
-                wristJoint = skeleton.Joints[JointType.WristLeft];
-                wrist = SkeletonPointToScreen(wristJoint.Position);
-                elbowJoint = skeleton.Joints[JointType.ElbowLeft];
-            }
-            elbow = SkeletonPointToScreen(elbowJoint.Position);
-            newPoint = new Point(wrist.X, wrist.Y);
-
-            newTheta = (float)Math.Acos((wrist.X - elbow.X) / Point.Subtract(wrist, elbow).Length);
-            if (wrist.Y < elbow.Y)
-                newTtheta = -newTheta;
-            */
 
             Point handR;
             Point handL;
@@ -607,8 +489,6 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             handR = SkeletonPointToScreen(handJointR.Position);
             handJointL = skeleton.Joints[JointType.HandLeft];
             handL = SkeletonPointToScreen(handJointL.Position);
-            //drawingContext.DrawEllipse(racketBrush, null, handR, 10, 10);
-            //drawingContext.DrawEllipse(racketBrush, null, handL, 10, 10);
 
             newPoint = new Point((handR.X + handL.X) / 2, (handR.Y + handL.Y) / 2);
             newTheta = (float)Math.Acos((handR.Y - handL.Y) / Point.Subtract(handR, handL).Length);
@@ -617,16 +497,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
 
             // Insert new theta and filter it
-            racket.theta = newTheta;
             racket.thetaList.Insert(0, newTheta);
-            if (racket.thetaList.Count > FIR_SIZE)
+            if (racket.thetaList.Count > FIR_SIZE) // If there is enough elements for the filter
             {
                 racket.thetaList.RemoveAt(FIR_SIZE);
                 racket.theta = 0;
                 for (int k = 0; k < FIR_SIZE; ++k)
-                {
                     racket.theta += racket.thetaList[k] * (float)fir[k];
-                }
             }
             else
             {
@@ -636,7 +513,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
             // Insert new position and filter it
             racket.posList.Insert(0, newPoint);
-            if (racket.posList.Count > FIR_SIZE)
+            if (racket.posList.Count > FIR_SIZE) // If there is enough elements for the filter
             {
                 racket.posList.RemoveAt(FIR_SIZE);
                 racket.pos.X = 0;
@@ -652,10 +529,11 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 racket.pos = racket.posList[0];
             }
 
-            rightEnd = ToScreenSystem(rightEnd, racket.pos, racket.theta);
-            leftEnd = ToScreenSystem(leftEnd, racket.pos, racket.theta);
+            // Obtain the ends of the racket
+            rightEnd = ToScreenReferenceFrame(rightEnd, racket.pos, racket.theta);
+            leftEnd = ToScreenReferenceFrame(leftEnd, racket.pos, racket.theta);
 
-            // Check what field side is the racket in
+            // Check which field side is the racket in
             if (rightEnd.X > RenderWidth / 2 && leftEnd.X > RenderWidth / 2)
                 side = FieldSide.Right;
             else if (rightEnd.X < RenderWidth / 2 && leftEnd.X < RenderWidth / 2)
@@ -663,15 +541,16 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             else
                 side = FieldSide.None;
 
-            if (!gameStarted)
+            if (!gameStarted) // When game is not started, players can change the field side
             {
                 racket.side = side;
             }
-            else if(racket.side != side)
+            else if (racket.side != side) // When game is started, if they don't remain on the same side
             {
                 racket.onItsSide = false;
-                if(ball.onScreen)
+                if (ball.onScreen) // And the ball is on the screen
                 {
+                    // The other player gets one point
                     if (racket.side == FieldSide.Right)
                     {
                         ++scoreL;
@@ -690,7 +569,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 racket.onItsSide = true;
             }
 
-            switch(racket.side)
+            // Select the racket color depending on the field side
+            switch (racket.side)
             {
                 case FieldSide.Right:
                     racketBrush = Brushes.Blue;
@@ -703,19 +583,21 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                     break;
             }
 
-            //drawingContext.DrawRectangle(racketBrush, new Pen(penBrush, penThickness), new Rect(rightEnd, leftEnd));
+            // Draw racket
             drawingContext.DrawLine(new Pen(racketBrush, 5), rightEnd, leftEnd);
         }
 
-        private Point ToScreenSystem(Point point, Point racketPos, float theta)
+        // Translate point from racket reference frame to screen reference frame 
+        private Point ToScreenReferenceFrame(Point point, Point racketPos, float theta)
         {
-            Matrix mat = new Matrix(Math.Cos(theta), Math.Sin(theta), 
-                                                      -Math.Sin(theta), Math.Cos(theta), 
+            Matrix mat = new Matrix(Math.Cos(theta), Math.Sin(theta),
+                                                      -Math.Sin(theta), Math.Cos(theta),
                                                       racketPos.X, racketPos.Y);
             return mat.Transform(point);
         }
 
-        private Vector ToScreenSystem(Vector vector, Point racketPos, float theta)
+        // Translate vector from racket reference frame to screen reference frame
+        private Vector ToScreenReferenceFrame(Vector vector, Point racketPos, float theta)
         {
             Point point;
 
@@ -729,7 +611,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             return vector;
         }
 
-        private Point ToRacketSystem(Point point, Point racketPos, float theta)
+        // Translate point from screen reference frame to racket reference frame
+        private Point ToRacketReferenceFrame(Point point, Point racketPos, float theta)
         {
             Matrix mat = new Matrix(Math.Cos(theta), Math.Sin(theta),
                                                       -Math.Sin(theta), Math.Cos(theta),
@@ -737,8 +620,9 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             mat.Invert();
             return mat.Transform(point);
         }
-
-        private Vector ToRacketSystem(Vector vector, Point racketPos, float theta)
+        
+        // Translate vector from screen reference frame to racket reference frame
+        private Vector ToRacketReferenceFrame(Vector vector, Point racketPos, float theta)
         {
             Point point;
 
@@ -753,68 +637,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             return vector;
         }
 
-        /// <summary>
-        /// Draws a skeleton's bones and joints
-        /// </summary>
-        /// <param name="skeleton">skeleton to draw</param>
-        /// <param name="drawingContext">drawing context to draw to</param>
-        private void DrawBonesAndJoints(Skeleton skeleton, DrawingContext drawingContext)
-        {
-            // Render Torso
-            this.DrawBone(skeleton, drawingContext, JointType.Head, JointType.ShoulderCenter);
-            this.DrawBone(skeleton, drawingContext, JointType.ShoulderCenter, JointType.ShoulderLeft);
-            this.DrawBone(skeleton, drawingContext, JointType.ShoulderCenter, JointType.ShoulderRight);
-            this.DrawBone(skeleton, drawingContext, JointType.ShoulderCenter, JointType.Spine);
-            this.DrawBone(skeleton, drawingContext, JointType.Spine, JointType.HipCenter);
-            this.DrawBone(skeleton, drawingContext, JointType.HipCenter, JointType.HipLeft);
-            this.DrawBone(skeleton, drawingContext, JointType.HipCenter, JointType.HipRight);
-
-            // Left Arm
-            this.DrawBone(skeleton, drawingContext, JointType.ShoulderLeft, JointType.ElbowLeft);
-            this.DrawBone(skeleton, drawingContext, JointType.ElbowLeft, JointType.WristLeft);
-            this.DrawBone(skeleton, drawingContext, JointType.WristLeft, JointType.HandLeft);
-
-            // Right Arm
-            this.DrawBone(skeleton, drawingContext, JointType.ShoulderRight, JointType.ElbowRight);
-            this.DrawBone(skeleton, drawingContext, JointType.ElbowRight, JointType.WristRight);
-            this.DrawBone(skeleton, drawingContext, JointType.WristRight, JointType.HandRight);
-
-            // Left Leg
-            this.DrawBone(skeleton, drawingContext, JointType.HipLeft, JointType.KneeLeft);
-            this.DrawBone(skeleton, drawingContext, JointType.KneeLeft, JointType.AnkleLeft);
-            this.DrawBone(skeleton, drawingContext, JointType.AnkleLeft, JointType.FootLeft);
-
-            // Right Leg
-            this.DrawBone(skeleton, drawingContext, JointType.HipRight, JointType.KneeRight);
-            this.DrawBone(skeleton, drawingContext, JointType.KneeRight, JointType.AnkleRight);
-            this.DrawBone(skeleton, drawingContext, JointType.AnkleRight, JointType.FootRight);
- 
-            // Render Joints
-            foreach (Joint joint in skeleton.Joints)
-            {
-                Brush drawBrush = null;
-
-                if (joint.TrackingState == JointTrackingState.Tracked)
-                {
-                    drawBrush = this.trackedJointBrush;                    
-                }
-                else if (joint.TrackingState == JointTrackingState.Inferred)
-                {
-                    drawBrush = this.inferredJointBrush;                    
-                }
-
-                if (drawBrush != null)
-                {
-                    drawingContext.DrawEllipse(drawBrush, null, this.SkeletonPointToScreen(joint.Position), JointThickness, JointThickness);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Maps a SkeletonPoint to lie within our render space and converts to Point
-        /// </summary>
-        /// <param name="skelpoint">point to map</param>
-        /// <returns>mapped point</returns>
+        // Maps a SkeletonPoint to lie within our render space and converts to Point
         private Point SkeletonPointToScreen(SkeletonPoint skelpoint)
         {
             // Convert point to depth space.  
@@ -823,56 +646,23 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             return new Point(depthPoint.X, depthPoint.Y);
         }
 
-        /// <summary>
-        /// Draws a bone line between two joints
-        /// </summary>
-        /// <param name="skeleton">skeleton to draw bones from</param>
-        /// <param name="drawingContext">drawing context to draw to</param>
-        /// <param name="jointType0">joint to start drawing from</param>
-        /// <param name="jointType1">joint to end drawing at</param>
-        private void DrawBone(Skeleton skeleton, DrawingContext drawingContext, JointType jointType0, JointType jointType1)
+        /// Gets the metadata for the speech recognizer (acoustic model) most suitable to
+        /// process audio from Kinect device.
+        private static RecognizerInfo GetKinectRecognizer()
         {
-            Joint joint0 = skeleton.Joints[jointType0];
-            Joint joint1 = skeleton.Joints[jointType1];
-
-            // If we can't find either of these joints, exit
-            if (joint0.TrackingState == JointTrackingState.NotTracked ||
-                joint1.TrackingState == JointTrackingState.NotTracked)
+            foreach (RecognizerInfo recognizer in SpeechRecognitionEngine.InstalledRecognizers())
             {
-                return;
-            }
-
-            // Don't draw if both points are inferred
-            if (joint0.TrackingState == JointTrackingState.Inferred &&
-                joint1.TrackingState == JointTrackingState.Inferred)
-            {
-                return;
-            }
-
-            // We assume all drawn bones are inferred unless BOTH joints are tracked
-            Pen drawPen = this.inferredBonePen;
-            if (joint0.TrackingState == JointTrackingState.Tracked && joint1.TrackingState == JointTrackingState.Tracked)
-            {
-                drawPen = this.trackedBonePen;
-            }
-
-            drawingContext.DrawLine(drawPen, this.SkeletonPointToScreen(joint0.Position), this.SkeletonPointToScreen(joint1.Position));
-        }
-
-        // Handles the checking or unchecking of the seated mode combo box
-        private void CheckBoxSeatedModeChanged(object sender, RoutedEventArgs e)
-        {
-            if (null != this.sensor)
-            {
-                if (this.checkBoxSeatedMode.IsChecked.GetValueOrDefault())
+                string value;
+                recognizer.AdditionalInfo.TryGetValue("Kinect", out value);
+                if ("True".Equals(value, StringComparison.OrdinalIgnoreCase) && "es-ES".Equals(recognizer.Culture.Name, StringComparison.OrdinalIgnoreCase))
                 {
-                    this.sensor.SkeletonStream.TrackingMode = SkeletonTrackingMode.Seated;
-                }
-                else
-                {
-                    this.sensor.SkeletonStream.TrackingMode = SkeletonTrackingMode.Default;
+                    return recognizer;
                 }
             }
+
+            return null;
         }
     }
 }
+
+
