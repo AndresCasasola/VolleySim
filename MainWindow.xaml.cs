@@ -29,6 +29,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         public bool onNet; // If ball is touching the net
     }
 
+    public enum FieldSide {None, Right, Left};
+
     public struct Racket
     {
         public Point pos; //
@@ -36,6 +38,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         public float theta; // Angle from x axis following the right hand rule
         public List<float> thetaList; 
         public bool onScreen; // If it is or not on screen
+        public FieldSide side;
+        public bool onItsSide;
     }
 
     /// <summary>
@@ -67,13 +71,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         private Racket racket1;
         private Racket racket2;
         private readonly float racketSize = 140; // Racket size from on end to the other
-        private readonly Brush racketBrush = Brushes.Blue; // Brush used to draw ball
+        private double racketWidth = 6.0;
 
         // Ball
         private Ball ball;
         private readonly double gravity = 0.4; // Gravity of the ball
         readonly double initialVel = 5; // Initial velocity of the ball
-        readonly Brush ballBrush = Brushes.Blue; // Brush used to draw ball
+        readonly Brush ballBrush = Brushes.White; // Brush used to draw ball
         float ballSize = 20;
         private DrawingGroup drawingGroupBall; // Drawing group for skeleton rendering output
         private DrawingImage imageSourceBall; // Drawing image that we will display
@@ -81,9 +85,16 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
         // Net
         private readonly float netHeight = RenderHeight * 0.5f;
         private readonly float netX = RenderWidth * 0.5f;
+        private double netWidth = 6.0;
+        private Brush netBrush = Brushes.White;
 
-        // Scores
+        // Game
         private int scoreR, scoreL;
+        private bool gameStarted;
+        private bool twoPlayers;
+
+        private double penThickness = 2.0;
+        private Brush penBrush = Brushes.Black;
 
         // RGB
         private WriteableBitmap colorBitmap; // Bitmap that will hold color information
@@ -262,7 +273,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 speechEngine.LoadGrammar(g);
 
                 speechEngine.SpeechRecognized += SpeechRecognized;
-                speechEngine.SpeechRecognitionRejected += SpeechRejected;
+                //speechEngine.SpeechRecognitionRejected += SpeechRejected;
 
                 // For long recognition sessions (a few hours or more), it may be beneficial to turn off adaptation of the acoustic model. 
                 // This will prevent recognition accuracy from degrading over time.
@@ -299,7 +310,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             if (null != this.speechEngine)
             {
                 this.speechEngine.SpeechRecognized -= SpeechRecognized;
-                this.speechEngine.SpeechRecognitionRejected -= SpeechRejected;
+                //this.speechEngine.SpeechRecognitionRejected -= SpeechRejected;
                 this.speechEngine.RecognizeAsyncStop();
             }
             // ^----- Speech recognizer -----^ //
@@ -423,10 +434,11 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
                 // Draw Ball
                 if(ball.onScreen)
-                    dc.DrawEllipse(ballBrush, null, ball.pos, ballSize, ballSize);
+                    dc.DrawEllipse(ballBrush, new Pen(Brushes.Black, penThickness), ball.pos, ballSize, ballSize);
 
                 // Draw Net
-                dc.DrawLine(new Pen(ballBrush, 5), new Point(netX, RenderHeight), new Point(netX, netHeight));
+                dc.DrawRectangle(netBrush, new Pen(penBrush, penThickness), new Rect(netX - netWidth / 2, netHeight, netWidth, RenderHeight));
+                //dc.DrawLine(new Pen(ballBrush, 5), new Point(netX, RenderHeight), new Point(netX, netHeight));
             }
             this.drawingGroupBall.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
         }
@@ -452,7 +464,8 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
             using (DrawingContext dc = this.drawingGroupSkeleton.Open())
             {
-                bool oneplayer = false;
+                bool onePlayer = false;
+                twoPlayers = false;
 
                 // Draw a transparent background to set the render size
                 dc.DrawRectangle(Brushes.Transparent, null, new Rect(0.0, 0.0, RenderWidth, RenderHeight));
@@ -461,21 +474,22 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
                 foreach (Skeleton skel in skeletons)
                 {
-                    RenderClippedEdges(skel, dc);
+                    //RenderClippedEdges(skel, dc);
 
                     if (skel.TrackingState == SkeletonTrackingState.Tracked)
                     {
                         //this.DrawBonesAndJoints(skel, dc);
-                        if (!oneplayer)
+                        if (!onePlayer)
                         {
                             DrawRacket(skel, dc, ref racket1);
                             racket1.onScreen = true;
-                            oneplayer = true;
+                            onePlayer = true;
                         }
                         else
                         {
                             DrawRacket(skel, dc, ref racket2);
                             racket2.onScreen = true;
+                            twoPlayers = true;
                         }
                     }
                     /*
@@ -515,7 +529,13 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 switch (e.Result.Semantics.Value.ToString())
                 {
                     case "PELOTA":
-                        if (!ball.onScreen)
+                        if(!gameStarted  &&  twoPlayers)
+                        {
+                            if (racket1.side != FieldSide.None && racket2.side != FieldSide.None && racket1.side != racket2.side)
+                                gameStarted = true;
+                        }
+
+                        if (gameStarted  &&  !ball.onScreen  &&  racket1.onItsSide  &&  racket2.onItsSide)
                         {
                             Random random = new Random();
                             int rand = random.Next(0, 2);
@@ -534,6 +554,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                         scoreL = 0;
                         textScoreL.Text = scoreL.ToString();
                         textScoreR.Text = scoreR.ToString();
+                        gameStarted = false;
                     break;
 
                 }
@@ -542,8 +563,10 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
 
         private void DrawRacket(Skeleton skeleton, DrawingContext drawingContext, ref Racket racket)
         {
-            Point rightEnd = new Point(0, racketSize / 2);
-            Point leftEnd = new Point(0, -racketSize / 2);
+            FieldSide side;
+            Brush racketBrush;
+            Point rightEnd = new Point(racketWidth / 2, racketSize / 2);
+            Point leftEnd = new Point(-racketWidth / 2, -racketSize / 2);
             Point newPoint;
             float newTheta;
 
@@ -629,10 +652,58 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                 racket.pos = racket.posList[0];
             }
 
-
             rightEnd = ToScreenSystem(rightEnd, racket.pos, racket.theta);
             leftEnd = ToScreenSystem(leftEnd, racket.pos, racket.theta);
 
+            // Check what field side is the racket in
+            if (rightEnd.X > RenderWidth / 2 && leftEnd.X > RenderWidth / 2)
+                side = FieldSide.Right;
+            else if (rightEnd.X < RenderWidth / 2 && leftEnd.X < RenderWidth / 2)
+                side = FieldSide.Left;
+            else
+                side = FieldSide.None;
+
+            if (!gameStarted)
+            {
+                racket.side = side;
+            }
+            else if(racket.side != side)
+            {
+                racket.onItsSide = false;
+                if(ball.onScreen)
+                {
+                    if (racket.side == FieldSide.Right)
+                    {
+                        ++scoreL;
+                        textScoreL.Text = scoreL.ToString();
+                    }
+                    else
+                    {
+                        ++scoreR;
+                        textScoreR.Text = scoreR.ToString();
+                    }
+                }
+                ball.onScreen = false;
+            }
+            else
+            {
+                racket.onItsSide = true;
+            }
+
+            switch(racket.side)
+            {
+                case FieldSide.Right:
+                    racketBrush = Brushes.Blue;
+                    break;
+                case FieldSide.Left:
+                    racketBrush = Brushes.Red;
+                    break;
+                default:
+                    racketBrush = Brushes.Black;
+                    break;
+            }
+
+            //drawingContext.DrawRectangle(racketBrush, new Pen(penBrush, penThickness), new Rect(rightEnd, leftEnd));
             drawingContext.DrawLine(new Pen(racketBrush, 5), rightEnd, leftEnd);
         }
 
@@ -788,11 +859,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             drawingContext.DrawLine(drawPen, this.SkeletonPointToScreen(joint0.Position), this.SkeletonPointToScreen(joint1.Position));
         }
 
-        /// <summary>
-        /// Handles the checking or unchecking of the seated mode combo box
-        /// </summary>
-        /// <param name="sender">object sending the event</param>
-        /// <param name="e">event arguments</param>
+        // Handles the checking or unchecking of the seated mode combo box
         private void CheckBoxSeatedModeChanged(object sender, RoutedEventArgs e)
         {
             if (null != this.sensor)
@@ -806,12 +873,6 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
                     this.sensor.SkeletonStream.TrackingMode = SkeletonTrackingMode.Default;
                 }
             }
-        }
-
-        /// Handler for rejected speech events.
-        private void SpeechRejected(object sender, SpeechRecognitionRejectedEventArgs e)
-        {
-            //ClearRecognitionHighlights();
         }
     }
 }
