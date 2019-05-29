@@ -366,7 +366,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             }
         }
 
-        // Update ball position, check collisions
+        // Update ball position, check collisions and draw ball and net
         private void DrawBall()
         {
             using (DrawingContext dc = this.drawingGroupBall.Open())
@@ -471,6 +471,7 @@ namespace Microsoft.Samples.Kinect.SkeletonBasics
             this.drawingGroupBall.ClipGeometry = new RectangleGeometry(new Rect(0.0, 0.0, RenderWidth, RenderHeight));
         }
 
+		// Filter wrist positions and draw racket
         private void DrawRacket(Skeleton skeleton, DrawingContext drawingContext, ref Racket racket)
         {
             FieldSide side;
